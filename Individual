@@ -1,0 +1,387 @@
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+from tkinter import simpledialog
+import sqlite3
+from ttkthemes import ThemedTk, ThemedStyle
+
+root = ThemedTk(theme="equilux")
+root.title("Library Window")
+root.configure(bg="#3b3b3b")
+
+style = ttk.Style(root)
+style.configure("TLabel", foreground="white", background="#3b3b3b")
+style.configure("TButton", foreground="white", background="#3b3b3b")
+style.configure("TEntry", foreground="white", background="#3b3b3b")
+
+button_frame = ttk.Frame(root, padding=20)
+button_frame.pack()
+
+themes = ['equilux', 'arc', 'plastik', 'adapta', 'scidgrey', 'radiance', 'clearlooks', 'keramik']
+current_theme_index = 0
+style = ThemedStyle(root)
+style.theme_use("equilux")
+
+tree = None
+page_size = 50
+current_page = 1
+total_pages = 0
+
+def display_books():
+    global tree, current_page, total_pages, books_window
+
+    if 'books_window' in globals() and books_window.winfo_exists(): # type: ignore
+        books_window.destroy() # type: ignore
+
+    books_window = tk.Toplevel(root)
+    books_window.title("Book Information")
+
+    conn = sqlite3.connect('books.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM books")
+    total_books = cursor.fetchone()[0]
+
+    total_pages = (total_books + page_size - 1) // page_size
+
+    start_index = (current_page - 1) * page_size
+    end_index = start_index + page_size
+
+    cursor.execute("SELECT * FROM books LIMIT ?, ?", (start_index, page_size))
+    book_data = cursor.fetchall()
+
+    conn.close()
+
+    book_data = [(book[0], book[1], book[2], book[3], book[4], '') if len(book) == 5 else book for book in book_data]
+
+    scrollbar = ttk.Scrollbar(books_window)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    tree = ttk.Treeview(books_window, columns=("ISBN", "Book_Title", "Book_Author", "Year_Of_Publication", "Publisher", "Borrower"), yscrollcommand=scrollbar.set)
+
+    tree.column("#0", width=0, stretch=tk.NO)
+    tree.column("ISBN", width=100, anchor=tk.CENTER)
+    tree.column("Book_Title", width=300, anchor=tk.W)
+    tree.column("Book_Author", width=200, anchor=tk.W)
+    tree.column("Year_Of_Publication", width=150, anchor=tk.CENTER)
+    tree.column("Publisher", width=200, anchor=tk.W)
+    tree.column("Borrower", width=150, anchor=tk.W)
+
+    tree.heading("#0", text="", anchor=tk.CENTER)
+    tree.heading("ISBN", text="ISBN", anchor=tk.CENTER)
+    tree.heading("Book_Title", text="Book Title", anchor=tk.CENTER)
+    tree.heading("Book_Author", text="Book Author", anchor=tk.CENTER)
+    tree.heading("Year_Of_Publication", text="Year of Publication", anchor=tk.CENTER)
+    tree.heading("Publisher", text="Publisher", anchor=tk.CENTER)
+    tree.heading("Borrower", text="Borrower", anchor=tk.CENTER)
+
+    for row in book_data:
+        tree.insert("", tk.END, values=row)
+
+    tree.pack(fill=tk.BOTH, expand=tk.YES, padx=10, pady=10)
+    scrollbar.config(command=tree.yview)
+
+    if 'page_buttons_frame' in globals() and page_buttons_frame.winfo_exists(): # type: ignore
+        page_buttons_frame.destroy() # type: ignore
+
+    page_buttons_frame = tk.Frame(books_window)
+    page_buttons_frame.pack()
+
+    prev_button = tk.Button(page_buttons_frame, text="Previous", state=tk.DISABLED, command=previous_page, bg="#3b3b3b", fg="white")
+    prev_button.grid(row=0, column=0, padx=5, pady=5)
+
+    page_label = tk.Label(page_buttons_frame, text="Page {}/{}".format(current_page, total_pages))
+    page_label.grid(row=0, column=1, padx=5, pady=5)
+
+    next_button = tk.Button(page_buttons_frame, text="Next", state=tk.DISABLED, command=next_page, bg="#3b3b3b", fg="white")
+    next_button.grid(row=0, column=2, padx=5, pady=5)
+
+    if current_page > 1:
+        prev_button["state"] = tk.NORMAL
+
+    if current_page < total_pages:
+        next_button["state"] = tk.NORMAL
+
+    navigation_frame = ttk.Frame(books_window)
+    navigation_frame.pack(pady=10)
+
+def previous_page():
+    global current_page
+    if current_page > 1:
+        current_page -= 1
+        display_books()
+
+def next_page():
+    global current_page, total_pages
+    if current_page < total_pages:
+        current_page += 1
+        display_books()
+
+def search_books():
+    global tree
+
+    search_text = entry_search.get()
+
+    conn = sqlite3.connect('books.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT `ISBN`, `Book_Title`, `Book_Author`, `Year_Of_Publication`, `Publisher` FROM books WHERE lower(`Book_Title`) LIKE ? OR lower(`Book_Author`) LIKE ?", ('%' + search_text.lower() + '%', '%' + search_text.lower() + '%'))
+    book_data = cursor.fetchall()
+    conn.close()
+
+    tree.delete(*tree.get_children()) # type: ignore
+
+    for row in book_data:
+        tree.insert("", tk.END, values=row) # type: ignore
+
+def add_book():
+    global tree
+
+    add_book_window = tk.Toplevel(root)
+    add_book_window.title("Add Book")
+
+    isbn_label = tk.Label(add_book_window, text="ISBN:")
+    isbn_entry = tk.Entry(add_book_window)
+    title_label = tk.Label(add_book_window, text="Title:")
+    title_entry = tk.Entry(add_book_window)
+    author_label = tk.Label(add_book_window, text="Author:")
+    author_entry = tk.Entry(add_book_window)
+    year_label = tk.Label(add_book_window, text="Year:")
+    year_entry = tk.Entry(add_book_window)
+    publisher_label = tk.Label(add_book_window, text="Publisher:")
+    publisher_entry = tk.Entry(add_book_window)
+
+    isbn_label.grid(row=0, column=0, padx=5, pady=5, sticky=tk.E)
+    isbn_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+    title_label.grid(row=1, column=0, padx=5, pady=5, sticky=tk.E)
+    title_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+    author_label.grid(row=2, column=0, padx=5, pady=5, sticky=tk.E)
+    author_entry.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+    year_label.grid(row=3, column=0, padx=5, pady=5, sticky=tk.E)
+    year_entry.grid(row=3, column=1, padx=5, pady=5, sticky=tk.W)
+    publisher_label.grid(row=4, column=0, padx=5, pady=5, sticky=tk.E)
+    publisher_entry.grid(row=4, column=1, padx=5, pady=5, sticky=tk.W)
+
+    def add_book_to_db():
+        isbn = isbn_entry.get()
+        title = title_entry.get()
+        author = author_entry.get()
+        year = year_entry.get()
+        publisher = publisher_entry.get()
+
+        if not isbn or not title or not author or not year or not publisher:
+            messagebox.showerror("Error", "All fields are required")
+            return
+
+        conn = sqlite3.connect('books.db')
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM books WHERE `ISBN`=?", (isbn,))
+        existing_book = cursor.fetchone()
+        if existing_book:
+            messagebox.showerror("Error", "Book with the given ISBN already exists")
+            conn.close()
+            return
+
+        cursor.execute("INSERT INTO books (`ISBN`, `Book_Title`, `Book_Author`, `Year_Of_Publication`, `Publisher`) VALUES (?, ?, ?, ?, ?)",
+               (isbn, title, author, year, publisher))
+        conn.commit()
+        conn.close()
+
+        isbn_entry.delete(0, tk.END)
+        title_entry.delete(0, tk.END)
+        author_entry.delete(0, tk.END)
+        year_entry.delete(0, tk.END)
+        publisher_entry.delete(0, tk.END)
+
+        tree.insert("", tk.END, values=(isbn, title, author, year, publisher, "")) # type: ignore
+
+        messagebox.showinfo("Success", "Book added successfully")
+
+    add_button = tk.Button(add_book_window, text="Add Book", command=add_book_to_db, bg="#3b3b3b", fg="white")
+    add_button.grid(row=5, column=0, columnspan=2, padx=5, pady=10)
+
+def remove_book():
+    global tree
+
+    selection = tree.selection() # type: ignore
+
+    if not selection:
+        messagebox.showerror("Error", "Please select a book to remove.")
+        return
+
+    for item in selection:
+        # Get the values of the selected item from the treeview
+        book_values = tree.item(item, 'values') # type: ignore
+
+        if not book_values:
+            continue
+
+        book_id = book_values[0]
+
+        conn = sqlite3.connect('books.db')
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM books WHERE ISBN=?", (book_id,))
+            conn.commit()
+
+            tree.delete(item) # type: ignore
+
+            messagebox.showinfo("Success", "Book removed successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+            conn.rollback()  # Roll back the changes if an error occurs
+
+        print(cursor.rowcount, "record(s) deleted")
+
+        conn.close()
+
+def lend_book():
+    selected_item = tree.selection() # type: ignore
+    
+    if not selected_item:
+        messagebox.showerror("Error", "No book selected.")
+        return
+
+    values = tree.item(selected_item)['values'] # type: ignore
+
+    if values[-1]:
+        messagebox.showinfo("Information", "The book is already borrowed.")
+        return
+
+    borrower_name = simpledialog.askstring("Borrower", "Enter the borrower's name:")
+    if not borrower_name:
+        return
+
+    conn = sqlite3.connect('books.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE books SET Borrower = ? WHERE ISBN = ?", (borrower_name, values[0]))
+    conn.commit()
+    conn.close()
+
+    tree.set(selected_item, "Borrower", borrower_name) # type: ignore
+
+def return_book():
+    global tree
+
+    selection = tree.selection() # type: ignore
+
+    if not selection:
+        messagebox.showerror("Error", "Please select a book to retrieve.")
+        return
+
+    for item in selection:
+        book_values = tree.item(item, 'values') # type: ignore
+
+        if not book_values:
+            continue
+
+        book_id = book_values[0]
+
+        if book_values[5] == '':
+            messagebox.showinfo("Information", "The selected book is already retrieved.")
+            continue
+
+        confirmation = messagebox.askyesno("Confirmation", "Are you sure you want to retrieve this book?")
+
+        if confirmation:
+            conn = sqlite3.connect('books.db')
+            cursor = conn.cursor()
+            cursor.execute("UPDATE books SET `Borrower` = '' WHERE `ISBN` = ?", (book_id,))
+            conn.commit()
+            conn.close()
+
+            tree.set(item, column="Borrower", value='') # type: ignore
+
+            messagebox.showinfo("Success", "Book retrieved successfully.")
+
+        else:
+            messagebox.showinfo("Information", "Book retrieval canceled.")
+
+def update_book():
+    global tree
+
+    selection = tree.selection() # type: ignore
+
+    if not selection:
+        messagebox.showerror("Error", "Please select a book to update.")
+        return
+
+    selected_item = selection[0]
+    values = tree.item(selected_item, 'values') # type: ignore
+
+    if not values:
+        return
+
+    isbn = values[0]
+
+    updated_values = simpledialog.askstring("Update Book", "Enter updated book details (ISBN, Title, Author, Year, Publisher):").split(",") # type:ignore
+
+    if len(updated_values) != 5:
+        messagebox.showerror("Error", "Invalid input. Please enter all book details.")
+        return
+
+    updated_isbn, title, author, year, publisher = [value.strip() for value in updated_values]
+
+    conn = sqlite3.connect('books.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM books WHERE `ISBN`=? AND `ISBN`!=?", (updated_isbn, isbn))
+    existing_book = cursor.fetchone()
+    if existing_book:
+        messagebox.showerror("Error", "Book with the updated ISBN already exists")
+        conn.close()
+        return
+
+    cursor.execute("UPDATE books SET `ISBN`=?, `Book_Title`=?, `Book_Author`=?, `Year_Of_Publication`=?, `Publisher`=? WHERE `ISBN`=?",
+                   (updated_isbn, title, author, year, publisher, isbn))
+    conn.commit()
+    conn.close()
+
+    tree.set(selected_item, "ISBN", updated_isbn) # type:ignore
+    tree.set(selected_item, "Book_Title", title) # type:ignore
+    tree.set(selected_item, "Book_Author", author) # type:ignore
+    tree.set(selected_item, "Year_Of_Publication", year) # type:ignore
+    tree.set(selected_item, "Publisher", publisher) # type:ignore
+
+    messagebox.showinfo("Success", "Book updated successfully.")
+
+def smart():
+    conn = sqlite3.connect('books.db')
+    cursor = conn.cursor()
+
+    cursor.execute("UPDATE books SET Borrower=NULL WHERE TRIM(Borrower) = ''")
+
+    conn.commit()
+
+    conn.close()
+
+def change_theme():
+    global current_theme_index
+    current_theme_index = (current_theme_index + 1) % len(themes)
+    new_theme = themes[current_theme_index]
+    style.theme_use(new_theme)
+
+button_book_info = ttk.Button(button_frame, text="Book Information", command=display_books)
+button_lend = ttk.Button(button_frame, text="Lend", command=lend_book, width=6)
+button_return = ttk.Button(button_frame, text="Return", command=return_book, width=6)
+button_play = ttk.Button(button_frame, text="Play", command=change_theme, width=6)
+button_add = ttk.Button(button_frame, text="Add", command=add_book, width=6)
+button_update = ttk.Button(button_frame, text="Update", command=update_book, width=6)
+button_remove = ttk.Button(button_frame, text="Remove", command=remove_book, width=6)
+button_search = ttk.Button(button_frame, text="Search", command=search_books)
+smart_search = ttk.Button(button_frame, text="[  ]", command=smart)
+entry_search = ttk.Entry(button_frame)
+
+button_book_info.grid(row=1, column=1, padx=(10, 0), pady=(0, 0))
+button_lend.grid(row=0, column=4, padx=(10, 0), pady=(10, 0))
+button_return.grid(row=1, column=4, padx=(10, 0), pady=(0))
+button_play.grid(row=2, column=4, padx=(10, 0), pady=(0, 10))
+button_add.grid(row=0, column=6, padx=(0, 10), pady=(10, 0))
+button_update.grid(row=1, column=6, padx=(0, 10), pady=(0))
+button_remove.grid(row=2, column=6, padx=(0, 10), pady=(0, 10))
+smart_search.grid(row=3, column=1, padx=(0, 95), pady=(0, 0))
+entry_search.grid(row=0, column=1, padx=(10, 0), pady=(5, 0))
+button_search.grid(row=0, column=2, padx=(0, 0), pady=(0, 0))
+
+root.mainloop()
